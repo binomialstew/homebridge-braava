@@ -14,7 +14,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git://github.com/esteban-mallen/homebridge-roomba"
+    "url": "git@github.com:binomialstew/homebridge-roomba-stv"
   },
   "engines": {
     "node": ">=0.12.0",
