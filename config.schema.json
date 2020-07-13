@@ -1,5 +1,5 @@
 {
-  "pluginAlias": "Roomba",
+  "pluginAlias": "Braava",
   "pluginType": "accessory",
   "schema": {
     "type": "object",

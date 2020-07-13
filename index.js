@@ -7,7 +7,7 @@ const timeout = require('promise-timeout').timeout;
 const STATUS = "status";
 const OLD_STATUS = 'oldStatus';
 
-const roombaAccessory = function (log, config) {
+const braavaAccessory = function (log, config) {
     this.log = log;
     this.name = config.name;
     this.model = config.model;
@@ -19,11 +19,13 @@ const roombaAccessory = function (log, config) {
     this.autoRefreshEnabled = config.autoRefreshEnabled;
     this.cacheTTL = config.cacheTTL || 5;
     this.disableWait = config.disableWait;
-    this.roomba = null;
+    this.braava = null;
 
     this.accessoryInfo = new Service.AccessoryInformation();
     this.switchService = new Service.Switch(this.name);
-    this.batteryService = new Service.BatteryService(this.name);
+    this.batteryService = new Service.BatteryService(`${this.name} Battery`);
+    this.padService = new Service.ContactSensor(`${this.name} Pad`);
+    this.tankService = new Service.FilterMaintenance(`${this.name} Tank`);
 
     this.cache = new nodeCache({
         stdTTL: this.cacheTTL,
@@ -38,27 +40,27 @@ const roombaAccessory = function (log, config) {
     }
 };
 
-roombaAccessory.prototype = {
-    getRoomba() {
+braavaAccessory.prototype = {
+    getBraava() {
         if (this.keepAliveEnabled) {
-            if (this.roomba == null) {
-                this.roomba = new dorita980.Local(this.blid, this.robotpwd, this.ipaddress);
+            if (this.braava == null) {
+                this.braava = new dorita980.Local(this.blid, this.robotpwd, this.ipaddress);
             }
-            return this.roomba;
+            return this.braava;
         } else {
             return new dorita980.Local(this.blid, this.robotpwd, this.ipaddress);
         }
     },
 
-    onConnected(roomba, callback, silent) {
-        if (this.keepAliveEnabled && roomba.connected) {
+    onConnected(braava, callback, silent) {
+        if (this.keepAliveEnabled && braava.connected) {
             callback();
         } else {
-            roomba.on("connect", () => {
+            braava.on("connect", () => {
                 if (!silent) {
-                    this.log("Connected to Roomba");
+                    this.log("Connected to Braava");
                 } else {
-                    this.log.debug("Connected to Roomba");
+                    this.log.debug("Connected to Braava");
                 }
                 callback();
             });
@@ -66,48 +68,48 @@ roombaAccessory.prototype = {
     },
 
     setState(powerOn, callback) {
-        let roomba = this.getRoomba();
+        let braava = this.getBraava();
 
         this.cache.del(STATUS);
 
         if (powerOn) {
-            this.log("Starting Roomba");
+            this.log("Starting Braava");
 
-            this.onConnected(roomba, async () => {
+            this.onConnected(braava, async () => {
                 try {
-                    this.log("Roomba is running");
+                    this.log("Braava is running");
 
-                    await roomba.clean();
+                    await braava.clean();
 
                     callback();
                 } catch (error) {
-                    this.log("Roomba failed: %s", error.message);
+                    this.log("Braava failed: %s", error.message);
 
                     callback(error);
                 } finally {
                     await setTimeout(() => this.log.debug('Trying to dock again...'), 2000);
 
-                    this.endRoombaIfNeeded(roomba);
+                    this.endBraavaIfNeeded(braava);
                 }
             });
         } else {
-            this.log("Roomba pause and dock");
+            this.log("Braava pause and dock");
 
-            this.onConnected(roomba, async () => {
+            this.onConnected(braava, async () => {
                 try {
-                    this.log("Roomba is pausing");
+                    this.log("Braava is pausing");
 
-                    await roomba.pause();
+                    await braava.pause();
 
                     callback();
 
-                    this.log("Roomba paused, returning to Dock");
+                    this.log("Braava paused, returning to Dock");
 
-                    this.dockWhenStopped(roomba, 3000);
+                    this.dockWhenStopped(braava, 3000);
                 } catch (error) {
-                    this.log("Roomba failed: %s", error.message);
+                    this.log("Braava failed: %s", error.message);
 
-                    this.endRoombaIfNeeded(roomba);
+                    this.endBraavaIfNeeded(braava);
 
                     callback(error);
                 }
@@ -115,43 +117,43 @@ roombaAccessory.prototype = {
         }
     },
 
-    endRoombaIfNeeded(roomba) {
+    endBraavaIfNeeded(braava) {
         if (!this.keepAliveEnabled) {
-            roomba.end();
+            braava.end();
         }
     },
 
-    async dockWhenStopped(roomba, pollingInterval) {
+    async dockWhenStopped(braava, pollingInterval) {
         try {
-            const state = await roomba.getRobotState(["cleanMissionStatus"]);
+            const state = await braava.getRobotState(["cleanMissionStatus"]);
 
             switch (state.cleanMissionStatus.phase) {
                 case "stop":
-                    this.log("Roomba has stopped, issuing dock request");
+                    this.log("Braava has stopped, issuing dock request");
 
-                    await roomba.dock();
-                    this.endRoombaIfNeeded(roomba);
+                    await braava.dock();
+                    this.endBraavaIfNeeded(braava);
 
-                    this.log("Roomba docking");
+                    this.log("Braava docking");
 
                     break;
                 case "run":
-                    this.log("Roomba is still running. Will check again in 3 seconds");
+                    this.log("Braava is still running. Will check again in 3 seconds");
 
                     await setTimeout(() => this.log.debug('Trying to dock again...'), pollingInterval);
-                    this.dockWhenStopped(roomba, pollingInterval);
+                    this.dockWhenStopped(braava, pollingInterval);
 
                     break;
                 default:
-                    this.endRoombaIfNeeded(roomba);
+                    this.endBraavaIfNeeded(braava);
 
-                    this.log("Roomba is not running");
+                    this.log("Braava is not running");
 
                     break;
             }
         } catch (error) {
             this.log(error);
-            this.endRoombaIfNeeded(roomba);
+            this.endBraavaIfNeeded(braava);
         }
     },
 
@@ -203,6 +205,40 @@ roombaAccessory.prototype = {
         });
     },
 
+    getPadState(callback) {
+        this.log("Pad state requested");
+
+        this.getStatus((error, status) => {
+            if (error) {
+                callback(error);
+            } else {
+                callback(null, status.padDetected);
+            }
+        });
+    },
+    getTankState(callback) {
+        this.log("Tank state requested");
+
+        this.getStatus((error, status) => {
+            if (error) {
+                callback(error);
+            } else {
+                callback(null, status.tankReady);
+            }
+        });
+    },
+    getTankLevel(callback) {
+        this.log("Tank fill level requested");
+
+        this.getStatus((error, status) => {
+            if (error) {
+                callback(error);
+            } else {
+                callback(null, status.tankLevel);
+            }
+        });
+    },
+
     identify(callback) {
         this.log("Identify requested. Not supported yet.");
 
@@ -215,7 +251,7 @@ roombaAccessory.prototype = {
         if (status) {
             callback(status.error, status);
         } else if (!this.autoRefreshEnabled) {
-            this.getStatusFromRoomba(callback, silent);
+            this.getStatusFromBraava(callback, silent);
         } else {
             if (!this.disableWait) {
                 setTimeout(() => this.getStatus(callback, silent), 10);
@@ -230,12 +266,15 @@ roombaAccessory.prototype = {
         }
     },
 
-    getStatusFromRoomba(callback, silent) {
-        let roomba = this.getRoomba();
+    getStatusFromBraava(callback, silent) {
+        let braava = this.getBraava();
 
-        this.onConnected(roomba, async () => {
+        this.onConnected(braava, async () => {
             try {
-                let response = await timeout(roomba.getRobotState(["cleanMissionStatus", "batPct", "bin"]), 5000);
+                const response = await timeout(
+                    braava.getRobotState(["cleanMissionStatus", "batPct", "mopReady", "detectedPad", "tankLvl"]),
+                    5000
+                );
                 const status = this.parseState(response);
 
                 if (this.autoRefreshEnabled) {
@@ -245,15 +284,15 @@ roombaAccessory.prototype = {
                 callback(null, status);
 
                 if (!silent) {
-                    this.log("Roomba[%s]", JSON.stringify(status));
+                    this.log("Braava[%s]", JSON.stringify(status));
                 } else {
-                    this.log.debug("Roomba[%s]", JSON.stringify(status));
+                    this.log.debug("Braava[%s]", JSON.stringify(status));
                 }
             } catch (error) {
                 if (!silent) {
-                    this.log("Unable to determine state of Roomba");
+                    this.log("Unable to determine state of Braava");
                 } else {
-                    this.log.debug("Unable to determine state of Roomba");
+                    this.log.debug("Unable to determine state of Braava");
                 }
 
                 this.log.debug(error);
@@ -262,9 +301,20 @@ roombaAccessory.prototype = {
 
                 this.cache.set(STATUS, {error: error});
             } finally {
-                this.endRoombaIfNeeded(roomba);
+                this.endBraavaIfNeeded(braava);
             }
         }, silent);
+    },
+
+    parsePadType(padType) {
+        const padTypes = {
+            dispDry: "Disposable Dry",
+            dispWet: "Disposable Wet",
+            invalid: "Invalid",
+            reusableDry: "Reusable Dry",
+            reusableWet: "Reusabled Wet"
+        }
+        return !(padType in padTypes) ? "Unknown" : padTypes[padType]
     },
 
     parseState(state) {
@@ -273,11 +323,21 @@ roombaAccessory.prototype = {
             charging: 0,
             batteryLevel: "N/A",
             batteryStatus: "N/A",
-            binFull: false
+            padDetected: "N/A",
+            padType: "N/A",
+            tankReady: "N/A",
+            tankLevel: "N/A"
         };
 
         status.batteryLevel = state.batPct;
-        status.binFull = state.bin.full;
+        status.padType = state.detectedPad;
+        status.padDetected = state.detectedPad !== "None" && state.detectedPad !== "invalid"
+            ? Characteristic.ContactSensorState.CONTACT_DETECTED
+            : Characteristic.ContactSensorState.CONTACT_NOT_DETECTED;
+        status.tankReady = state.mopReady.tankPresent && state.mopReady.lidClosed
+            ? Characteristic.FilterChangeIndication.FILTER_OK
+            : Characteristic.FilterChangeIndication.CHANGE_FILTER;
+        status.tankLevel = state.tankLvl;
 
         if (status.batteryLevel <= 20) {
             status.batteryStatus = Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW;
@@ -327,17 +387,31 @@ roombaAccessory.prototype = {
         this.batteryService
             .getCharacteristic(Characteristic.StatusLowBattery)
             .on("get", this.getLowBatteryStatus.bind(this));
+        this.tankService
+            .getCharacteristic(Characteristic.FilterLifeLevel)
+            .on("get", this.getTankLevel.bind(this));
+        this.tankService
+            .getCharacteristic(Characteristic.FilterChangeIndication)
+            .on("get", this.getTankState.bind(this));
+        this.padService
+            .getCharacteristic(Characteristic.ContactSensorState)
+            .on("get", this.getPadState.bind(this));
 
-        return [this.accessoryInfo, this.switchService, this.batteryService];
+        return [this.accessoryInfo, this.switchService, this.batteryService, this.tankService, this.padService];
     },
 
     registerStateUpdate() {
         this.log("Enabling keepAlive");
 
-        const roomba = this.getRoomba();
+        const braava = this.getBraava();
 
-        roomba.on("state", state => {
+        braava.on("state", state => {
             const status = this.parseState(state);
+
+            this.padService.setCharacteristic(
+                Characteristic.Name,
+                `${this.name} ${this.parsePadType(status.padType)} Pad`
+            )
 
             if (this.autoRefreshEnabled) {
                 this.cache.set(STATUS, status);
@@ -360,6 +434,15 @@ roombaAccessory.prototype = {
         this.batteryService
             .getCharacteristic(Characteristic.StatusLowBattery)
             .updateValue(status.batteryStatus);
+        this.tankService
+            .getCharacteristic(Characteristic.FilterChangeIndication)
+            .updateValue(status.tankReady);
+        this.tankService
+            .getCharacteristic(Characteristic.FilterLevel)
+            .updateValue(status.tankLevel);
+        this.padService
+            .getCharacteristic(Characteristic.ContactSensorState)
+            .updateValue(status.padDetected);
     },
 
     enableAutoRefresh() {
@@ -371,12 +454,12 @@ roombaAccessory.prototype = {
 
             that.cache.set(OLD_STATUS, value, 0);
 
-            that.getStatusFromRoomba((error, status) => {
+            that.getStatusFromBraava((error, status) => {
                 if (!error) that.updateCharacteristics(status);
             }, true);
         });
 
-        this.getStatusFromRoomba((error, status) => {
+        this.getStatusFromBraava((error, status) => {
             if (!error) that.updateCharacteristics(status);
         }, true);
     }
@@ -386,5 +469,5 @@ module.exports = homebridge => {
     Service = homebridge.hap.Service;
     Characteristic = homebridge.hap.Characteristic;
 
-    homebridge.registerAccessory("homebridge-roomba-stv", "Braava", roombaAccessory);
+    homebridge.registerAccessory("homebridge-braava", "Braava", braavaAccessory);
 };

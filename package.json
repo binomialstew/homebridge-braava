@@ -1,20 +1,20 @@
 {
-  "name": "homebridge-roomba-stv",
-  "description": "homebridge-plugin for Roomba9xx",
-  "version": "1.6.0",
+  "name": "homebridge-braava",
+  "description": "homebridge-plugin for Braava Jet",
+  "version": "1.0.0",
   "license": "MIT",
-  "author": {
-    "name": "esteban-mallen"
-  },
+  "author": "Charles Lehnert <charles@cllinteractive.com>",
   "main": "",
   "keywords": [
     "homebridge-plugin",
     "iRobot",
-    "Roomba"
+    "Braava",
+    "Jet",
+    "m6"
   ],
   "repository": {
     "type": "git",
-    "url": "git@github.com:binomialstew/homebridge-roomba-stv"
+    "url": "git@github.com:binomialstew/homebridge-braava"
   },
   "engines": {
     "node": ">=0.12.0",

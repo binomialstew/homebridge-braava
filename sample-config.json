@@ -5,13 +5,13 @@
     "port": 51826,
     "pin": "031-45-156"
   },
-  "description": "Homebridge plugin for Roomba 9xx",
+  "description": "Homebridge plugin for Braava",
   "platforms": [],
   "accessories": [
     {
-      "accessory": "Roomba",
-      "name": "Roomba",
-      "model": "960",
+      "accessory": "Braava",
+      "name": "My Braava Jet",
+      "model": "m6",
       "blid": "1234567890",
       "robotpwd": "aPassword",
       "ipaddress": "10.0.0.30",
