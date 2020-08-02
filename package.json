@@ -1,7 +1,7 @@
 {
   "name": "homebridge-braava",
   "description": "homebridge-plugin for Braava Jet",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "license": "MIT",
   "author": "Charles Lehnert <charles@cllinteractive.com>",
   "main": "",
