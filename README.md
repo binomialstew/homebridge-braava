@@ -11,9 +11,10 @@ homebridge-plugin for Braava Jet (tested only with Braava Jet m6).
 - battery level (with low battery warning)
 - tank level indication (uses FilterMaintenance Service for now until a Tank Service is available)
 - pad type and status indication
+- ordered/unordered clean of specific rooms
 
 ### Fork:
-This plugin is forked from and slightly modified from:  
+This plugin was initially forked from:  
 https://github.com/stvmallen/homebridge-roomba-stv
 
 Thanks to [@esteban-mallen](https://github.com/stvmallen)
@@ -21,6 +22,9 @@ Thanks to [@esteban-mallen](https://github.com/stvmallen)
 Modifications have been made to support iRobot Braava Jet m6. Additional support for Braava is planned for the future.
 
 ### Credits to:
+
+https://github.com/koalazak/dorita980
+
 https://github.com/umesan/homebridge-roomba
 
 https://github.com/steedferns/homebridge-roomba980
@@ -84,3 +88,49 @@ This plugins supports these refresh modes:
 - AUTO REFRESH (`autoRefreshEnabled` set to true) - we will connect to braava, every `pollingInterval` seconds, and store the status in cache. if `pollingInterval` = `cacheTTL` - 10 (or more), this will make sure we will always have a valid status.
 
 - KEEP ALIVE (`keepAlive` set to true) - we will keep a connection to braava, this will cause app to fail to connect to braava in local network mode (cloud mode will work just fine, even in your home wifi). This will lead to better performance (status will refresh faster, and toggle will work faster as well). **Keep in mind this will increase the Braava battery consumption**.
+
+### Advanced configuration
+#### Ordered room cleaning
+For robots with the ability to set ordered cleaning of rooms, an object can be supplied in the configuration specifying which rooms to clean and in what order.
+Note that a smart map is required to use this feature. If you have the ability to set a room-specific cleaning in your iRobot app, you should be able to set the plugin configuration to do the same. 
+
+To get the regions defined in your smart map, inspect the robot state for the `lastCommand` value. There are a few different ways to do this. Probably the simplest—while using this plugin, you can set homebridge to debug mode, which will output `state.lastCommand` on a state update:
+
+> Homebridge Settings >
+> Startup Options >
+> Homebridge Debug Mode
+
+Alternatively, you can use [koalazak/rest980](https://github.com/koalazak/rest980) to inspect the state.
+
+Use `ordered`, `regions`, `pmap_id` and `user_pmapv_id` in your `orderedClean` config:
+
+```
+"accessories": [
+    {
+        "name": "Your chosen name",
+        "model": "m6",
+        "blid": "1234567890",
+        "robotpwd": "aPassword",
+        "ipaddress": "192.168.xx.xx",
+        "autoRefreshEnabled": true,
+        "keepAliveEnabled": true,
+        "accessory": "Braava",
+        "orderedClean": {
+            "ordered": 1, // 0 to run unordered
+            "regions": [
+                {
+                    "region_id": "3"
+                },
+                {
+                    "region_id": "1"
+                },
+                {
+                    "region_id": "2"
+                }
+            ],
+            "pmap_id": "xxxxxxxxxxxxxxxxxxxx",
+            "user_pmapv_id": "XXXXXXXXXXXX"
+        }
+    }
+]
+```
