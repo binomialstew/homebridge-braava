@@ -20,12 +20,16 @@ const braavaAccessory = function (log, config) {
     this.cacheTTL = config.cacheTTL || 5;
     this.disableWait = config.disableWait;
     this.braava = null;
+    this.orderedClean = config.orderedClean;
 
     this.accessoryInfo = new Service.AccessoryInformation();
-    this.switchService = new Service.Switch(this.name);
+    this.switchService = new Service.Switch(this.name, 'power');
     this.batteryService = new Service.BatteryService(`${this.name} Battery`);
     this.padService = new Service.ContactSensor(`${this.name} Pad`);
     this.tankService = new Service.FilterMaintenance(`${this.name} Tank`);
+    if (typeof this.orderedClean !== 'undefined') {
+        this.roomService = new Service.Switch(`${this.name} Clean Rooms`, 'rooms');
+    }
 
     this.cache = new nodeCache({
         stdTTL: this.cacheTTL,
@@ -52,9 +56,9 @@ braavaAccessory.prototype = {
         }
     },
 
-    onConnected(braava, callback, silent) {
+    async onConnected(braava, silent) {
         if (this.keepAliveEnabled && braava.connected) {
-            callback();
+            return true
         } else {
             braava.on("connect", () => {
                 if (!silent) {
@@ -62,8 +66,42 @@ braavaAccessory.prototype = {
                 } else {
                     this.log.debug("Connected to Braava");
                 }
-                callback();
+                return true
             });
+        }
+    },
+    async dock(braava) {
+        this.log("Braava pause and dock");
+
+        await this.onConnected(braava);
+        try {
+            this.log("Braava is pausing");
+
+            const paused = await braava.pause();
+
+            this.log("Braava paused, returning to Dock");
+
+            return await this.dockWhenStopped(braava, 3000);
+        } catch (error) {
+            this.log("Braava failed: %s", error.message);
+
+            this.endBraavaIfNeeded(braava);
+        }
+    },
+
+    async cleanAll(braava) {
+        try {
+            this.log("Braava is running");
+
+            const clean = await braava.clean();
+
+            return clean;
+        } catch (error) {
+            this.log("Braava failed: %s", error.message);
+        } finally {
+            await setTimeout(() => this.log.debug('Trying to dock again...'), 2000);
+
+            this.endBraavaIfNeeded(braava);
         }
     },
 
@@ -75,47 +113,39 @@ braavaAccessory.prototype = {
         if (powerOn) {
             this.log("Starting Braava");
 
-            this.onConnected(braava, async () => {
-                try {
-                    this.log("Braava is running");
-
-                    await braava.clean();
-
-                    callback();
-                } catch (error) {
-                    this.log("Braava failed: %s", error.message);
-
-                    callback(error);
-                } finally {
-                    await setTimeout(() => this.log.debug('Trying to dock again...'), 2000);
-
-                    this.endBraavaIfNeeded(braava);
-                }
-            });
+            this.onConnected(braava).then(this.cleanAll(braava));
+            
         } else {
-            this.log("Braava pause and dock");
-
-            this.onConnected(braava, async () => {
-                try {
-                    this.log("Braava is pausing");
-
-                    await braava.pause();
-
-                    callback();
-
-                    this.log("Braava paused, returning to Dock");
-
-                    this.dockWhenStopped(braava, 3000);
-                } catch (error) {
-                    this.log("Braava failed: %s", error.message);
-
-                    this.endBraavaIfNeeded(braava);
-
-                    callback(error);
-                }
-            });
+            this.dock(braava).then(() => true);
         }
     },
+    async cleanRooms(powerOn) {
+        let braava = this.getBraava();
+
+        this.cache.del(STATUS);
+
+        if (powerOn) {
+            this.log("Clean rooms requested");
+            await this.onConnected(braava);
+            try {
+                this.log("Braava is connected");
+                this.log.debug(this.orderedClean);
+                const cleanResult = await braava.cleanRoom(this.orderedClean);
+                this.log('Cleaning specific rooms');
+                return cleanResult;
+
+            } catch (error) {
+                this.log("Braava failed: %s", error.message);
+            } finally {
+                await setTimeout(() => this.log.debug('Trying to dock again...'), 2000);
+
+                this.endBraavaIfNeeded(braava);
+            }
+        } else {
+            await this.dock(braava);
+            return true;
+        }
+    },  
 
     endBraavaIfNeeded(braava) {
         if (!this.keepAliveEnabled) {
@@ -131,11 +161,11 @@ braavaAccessory.prototype = {
                 case "stop":
                     this.log("Braava has stopped, issuing dock request");
 
-                    await braava.dock();
+                    const docked = await braava.dock();
                     this.endBraavaIfNeeded(braava);
 
                     this.log("Braava docking");
-
+                    return docked;
                     break;
                 case "run":
                     this.log("Braava is still running. Will check again in 3 seconds");
@@ -251,10 +281,14 @@ braavaAccessory.prototype = {
         if (status) {
             callback(status.error, status);
         } else if (!this.autoRefreshEnabled) {
-            this.getStatusFromBraava(callback, silent);
+            this.getStatusFromBraava(silent).then(status => {
+                callback(null, status);
+            });
         } else {
             if (!this.disableWait) {
-                setTimeout(() => this.getStatus(callback, silent), 10);
+                setTimeout(() => {
+                    this.getStatus(callback, silent);
+                }, 10);
             } else if (this.cache.get(OLD_STATUS)) {
                 this.log.warn('Using expired status');
 
@@ -266,44 +300,39 @@ braavaAccessory.prototype = {
         }
     },
 
-    getStatusFromBraava(callback, silent) {
+    async getStatusFromBraava(silent) {
         let braava = this.getBraava();
+        await this.onConnected(braava, silent);
+        try {
+            const response = await timeout(
+                braava.getRobotState(["cleanMissionStatus", "batPct", "mopReady", "detectedPad", "tankLvl"]),
+                5000
+            );
+            const status = this.parseState(response);
 
-        this.onConnected(braava, async () => {
-            try {
-                const response = await timeout(
-                    braava.getRobotState(["cleanMissionStatus", "batPct", "mopReady", "detectedPad", "tankLvl"]),
-                    5000
-                );
-                const status = this.parseState(response);
-
-                if (this.autoRefreshEnabled) {
-                    this.cache.set(STATUS, status);
-                }
-
-                callback(null, status);
-
-                if (!silent) {
-                    this.log("Braava[%s]", JSON.stringify(status));
-                } else {
-                    this.log.debug("Braava[%s]", JSON.stringify(status));
-                }
-            } catch (error) {
-                if (!silent) {
-                    this.log("Unable to determine state of Braava");
-                } else {
-                    this.log.debug("Unable to determine state of Braava");
-                }
-
-                this.log.debug(error);
-
-                callback(error);
-
-                this.cache.set(STATUS, {error: error});
-            } finally {
-                this.endBraavaIfNeeded(braava);
+            if (this.autoRefreshEnabled) {
+                this.cache.set(STATUS, status);
             }
-        }, silent);
+
+            if (!silent) {
+                this.log("Braava[%s]", JSON.stringify(status));
+            } else {
+                this.log.debug("Braava[%s]", JSON.stringify(status));
+            }
+            return status;
+        } catch (error) {
+            if (!silent) {
+                this.log("Unable to determine state of Braava");
+            } else {
+                this.log.debug("Unable to determine state of Braava");
+            }
+
+            this.log.debug(error);
+
+            this.cache.set(STATUS, {error: error});
+        } finally {
+            this.endBraavaIfNeeded(braava);
+        }
     },
 
     parsePadType(padType) {
@@ -344,7 +373,6 @@ braavaAccessory.prototype = {
         } else {
             status.batteryStatus = Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL;
         }
-
         switch (state.cleanMissionStatus.phase) {
             case "run":
                 status.running = 1;
@@ -372,12 +400,10 @@ braavaAccessory.prototype = {
         this.accessoryInfo.setCharacteristic(Characteristic.Name, this.name);
         this.accessoryInfo.setCharacteristic(Characteristic.Model, this.model);
         this.accessoryInfo.setCharacteristic(Characteristic.FirmwareRevision, this.firmware);
-
         this.switchService
             .getCharacteristic(Characteristic.On)
             .on("set", this.setState.bind(this))
             .on("get", this.getRunningStatus.bind(this));
-
         this.batteryService
             .getCharacteristic(Characteristic.BatteryLevel)
             .on("get", this.getBatteryLevel.bind(this));
@@ -396,8 +422,13 @@ braavaAccessory.prototype = {
         this.padService
             .getCharacteristic(Characteristic.ContactSensorState)
             .on("get", this.getPadState.bind(this));
-
-        return [this.accessoryInfo, this.switchService, this.batteryService, this.tankService, this.padService];
+        if (typeof this.orderedClean !== 'undefined') {
+            this.roomService
+                .getCharacteristic(Characteristic.On)
+                .on("set", this.cleanRooms.bind(this))
+                .on("get", this.getRunningStatus.bind(this));
+        }
+        return [this.accessoryInfo, this.switchService, typeof this.orderedClean !== 'undefined' && this.roomService, this.batteryService, this.tankService, this.padService];
     },
 
     registerStateUpdate() {
@@ -406,13 +437,8 @@ braavaAccessory.prototype = {
         const braava = this.getBraava();
 
         braava.on("state", state => {
+            this.log.debug("Braava state.lastcommand: [%s]", JSON.stringify(state.lastCommand));
             const status = this.parseState(state);
-
-            this.padService.setCharacteristic(
-                Characteristic.Name,
-                `${this.name} ${this.parsePadType(status.padType)} Pad`
-            )
-
             if (this.autoRefreshEnabled) {
                 this.cache.set(STATUS, status);
             }
@@ -422,6 +448,10 @@ braavaAccessory.prototype = {
     },
 
     updateCharacteristics(status) {
+        this.padService.setCharacteristic(
+            Characteristic.Name,
+            `${this.name} ${this.parsePadType(status.padType)} Pad`
+        )
         this.switchService
             .getCharacteristic(Characteristic.On)
             .updateValue(status.running);
@@ -438,30 +468,30 @@ braavaAccessory.prototype = {
             .getCharacteristic(Characteristic.FilterChangeIndication)
             .updateValue(status.tankReady);
         this.tankService
-            .getCharacteristic(Characteristic.FilterLevel)
+            .getCharacteristic(Characteristic.FilterLifeLevel)
             .updateValue(status.tankLevel);
         this.padService
             .getCharacteristic(Characteristic.ContactSensorState)
             .updateValue(status.padDetected);
+        if (typeof this.orderedClean !== 'undefined') {
+            this.roomService
+                .getCharacteristic(Characteristic.On)
+                .updateValue(status.running);
+        }
     },
 
     enableAutoRefresh() {
         this.log("Enabling autoRefresh every %s seconds", this.cache.options.stdTTL);
 
-        let that = this;
+        const that = this;
         this.cache.on('expired', (key, value) => {
             that.log.debug(key + " expired");
 
             that.cache.set(OLD_STATUS, value, 0);
 
-            that.getStatusFromBraava((error, status) => {
-                if (!error) that.updateCharacteristics(status);
-            }, true);
+            that.getStatusFromBraava(true).then(status => that.updateCharacteristics(status));
         });
-
-        this.getStatusFromBraava((error, status) => {
-            if (!error) that.updateCharacteristics(status);
-        }, true);
+        this.getStatusFromBraava(true).then(status => this.updateCharacteristics(status));
     }
 };
 

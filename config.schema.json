@@ -31,7 +31,7 @@
         },
         "autoRefreshEnabled": {
             "type": "boolean",
-            "title": "Auto Refreshe Enabled",
+            "title": "Auto Refresh Enabled",
             "required": false
         },
         "keepAliveEnabled": {
@@ -43,6 +43,44 @@
             "type": "number",
             "title": "TTL Cache",
             "required": false
+        },
+        "orderedClean": {
+            "type": "object",
+            "title": "Ordered Clean Config",
+            "required": false,
+            "properties": {
+                "ordered": {
+                    "type": "number",
+                    "title": "Ordered",
+                    "required": false
+                },
+                "regions": {
+                    "type": "array",
+                    "title": "Regions",
+                    "required": false,
+                    "description": "Enter IDs of regions to be cleaned",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "region_id": {
+                                "type": "string",
+                                "title": "Region ID",
+                                "required": false
+                            }
+                        }
+                    }
+                },
+                "pmap_id": {
+                    "type": "string",
+                    "title": "PMap ID",
+                    "required": false
+                },
+                "user_pmapv_id": {
+                    "type": "string",
+                    "title": "User PMapV ID",
+                    "required": false
+                }
+            }
         }
     }
 }
